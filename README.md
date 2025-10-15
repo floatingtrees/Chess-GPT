@@ -13,3 +13,5 @@ Data should be formatted as a list of strings containing the board positions. Wo
 When annotating positions mention strategic / tactical moves, come up with a few candidate moves, and eliminate some of them before picking the best one. They should be formatted as a list of [{"role": "user", "content": BOARD_POSITION}, {"role": "assistant", "content": ANALYSIS_GOES_HERE}]. BOARD_POSITION can be in PGN position. Annotations can be put in analysis.json. 
 
 For the person figuring out/converting PGN to optimal formats for the model, work in preprocess_position.py. 
+
+Try to stay in your files to avoid merge conflicts, and use python3.12 if possible. 
