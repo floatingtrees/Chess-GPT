@@ -1,0 +1,12 @@
+[
+    [
+        {
+            "role": "user",
+            "content": BOARD_POSITION
+        },
+        {
+            "role": "assistant",
+            "content": ANALYSIS_GOES_HERE
+        }
+    ],
+]
