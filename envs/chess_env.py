@@ -112,12 +112,12 @@ class BoardEnv:
         """Get meta guidance instructions for the LLM."""
         return f"""<META_GUIDANCE>
     You are an expert chess player.
-    You will be given board state within the <BOARD> tag.
-    You will be given misc info (en passant, castling, etc.) within the <MISC_INFO> tag.
-    You will be given the turn (white to move or black to move) within the <TURN> tag which indicates which player you are.
+    You will be given board state within the `<BOARD>` tag.
+    You will be given misc info (en passant, castling, etc.) within the `<MISC_INFO>` tag.
+    You will be given the turn (white to move or black to move) within the `<TURN>` tag which indicates which player you are.
     </META_GUIDANCE>
     <INSTRUCTIONS>
-    You will be RESPONDING with a final move in the format of <MOVE>[your move here as SAN notation string]</MOVE> where the contents of MOVE are SAN notation strings. E.g. to move the knight to c3 you will return <MOVE>Nc3</MOVE>.
+    You will be RESPONDING with a final move in the format of `<MOVE>[your move here as SAN notation string]</MOVE>` where the contents of MOVE are SAN notation strings. E.g. to move the knight to c3 you will return `<MOVE>Nc3</MOVE>`.
     </INSTRUCTIONS>
     """
     
@@ -174,24 +174,46 @@ class BoardEnv:
         UNPARSEABLE_MOVE = "unparseable_move"
         LEGAL_MOVE = "legal_move"
 
-    def sim_move(self, move: chess.Move) -> Tuple[str, str, SimMoveStatus]:
+    def _parse_move_string(self, move_str: str) -> chess.Move:
         """
-        Get the before and after board states of a move. Returns error object if move is illegal or unparseable.
+        Parse move string (LLM output or SAN) into chess.Move object.
         
-        Will not push the move to the current board.
-
         Args:
-            move: chess.Move object
-            illegal_move_penalty: penalty for making an illegal move
-            unparseable_move_penalty: penalty for unparseable move
+            move_str: Move string, either LLM output with <MOVE> tags or direct SAN notation
             
         Returns:
-            Tuple[str, str, SimMoveError]: before and after board states in FEN strings and error object
+            chess.Move object, or chess.Move.null() if parsing fails
         """
-
+        # Check if it's LLM output with <MOVE> tags
+        move_start_index = move_str.rfind("<MOVE>")
+        move_end_index = move_str.rfind("</MOVE>")
+        
+        if move_start_index != -1 and move_end_index != -1:
+            # get move tag contents
+            san_move = move_str[move_start_index + 6:move_end_index].strip()
+        else:
+            # else try to  use as direct SAN notation
+            san_move = move_str.strip()
+        
+        try:
+            return self.board.parse_san(san_move)
+        except (IndexError, chess.InvalidMoveError, ValueError):
+            return chess.Move.null()
+    
+    def _simulate_move_execution(self, move: chess.Move) -> Tuple[str, str, SimMoveStatus]:
+        """
+        Simulate move execution on a copy of the board.
+        
+        Args:
+            move: chess.Move object
+            
+        Returns:
+            Tuple[str, str, SimMoveStatus]: before and after board states in FEN strings and status
+        """
         temp_board = self.board.copy()
         before_fen = temp_board.fen()
         after_fen = before_fen
+        
         if move in temp_board.legal_moves:
             temp_board.push(move)
             after_fen = temp_board.fen()
@@ -200,6 +222,25 @@ class BoardEnv:
             return before_fen, after_fen, self.SimMoveStatus.UNPARSEABLE_MOVE
         else:
             return before_fen, after_fen, self.SimMoveStatus.ILLEGAL_MOVE
+    
+    def sim_move(self, move: Union[str, chess.Move]) -> Tuple[str, str, SimMoveStatus]:
+        """
+        Get the before and after board states of a move. Handles both string and Move inputs.
+        
+        Will not push the move to the current board.
+
+        Args:
+            move: Either a chess.Move object or a string (LLM output or SAN notation)
+            
+        Returns:
+            Tuple[str, str, SimMoveStatus]: before and after board states in FEN strings and status
+        """
+        parsed_move: chess.Move
+        if isinstance(move, str):
+            parsed_move = self._parse_move_string(move)
+        else:
+            parsed_move = move
+        return self._simulate_move_execution(parsed_move)
     
     def get_legal_moves(self) -> list[chess.Move]:
         """Get list of all legal moves in the current position."""
@@ -225,7 +266,6 @@ class BoardEnv:
         """Detailed representation of the BoardEnv."""
         return f"BoardEnv(fen='{self.board.fen()}')"
     
-
 # Example usage:
 if __name__ == "__main__":
     # Example FEN from the original code
@@ -245,11 +285,27 @@ if __name__ == "__main__":
     parsed_move = board_env.parse_llm_move(llm_output)
     print(f"Parsed move from LLM output '{llm_output}': {parsed_move}")
     
-    # Example of simulating a move
+    # Example of simulating a move with Move object
     before_fen, after_fen, status = board_env.sim_move(parsed_move)
     print(f"Before move FEN: {before_fen}")
     print(f"After move FEN: {after_fen}")
     print(f"Status: {status}")
+    
+    # Example of sim move directly off of LLM output
+    print("\n" + "="*50 + "\n")
+    print("Testing new sim_move with string inputs:")
+    
+    # Test with LLM output string
+    before_fen, after_fen, status = board_env.sim_move(llm_output)
+    print(f"LLM output '{llm_output}' -> Status: {status}")
+    
+    # Test with direct SAN notation
+    before_fen, after_fen, status = board_env.sim_move("Nc3")
+    print(f"Direct SAN 'Nc3' -> Status: {status}")
+    
+    # Test with invalid move
+    before_fen, after_fen, status = board_env.sim_move("InvalidMove")
+    print(f"Invalid move 'InvalidMove' -> Status: {status}")
 
     # Example of making a move
     if parsed_move != chess.Move.null():
