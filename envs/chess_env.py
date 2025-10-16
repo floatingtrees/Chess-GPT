@@ -300,12 +300,14 @@ if __name__ == "__main__":
     print(f"LLM output '{llm_output}' -> Status: {status}")
     
     # Test with direct SAN notation
-    before_fen, after_fen, status = board_env.sim_move("Nc3")
-    print(f"Direct SAN 'Nc3' -> Status: {status}")
+    move_str = "Ne5"
+    before_fen, after_fen, status = board_env.sim_move(move_str)
+    print(f"Direct SAN '{move_str}' -> Status: {status}")
     
     # Test with invalid move
-    before_fen, after_fen, status = board_env.sim_move("InvalidMove")
-    print(f"Invalid move 'InvalidMove' -> Status: {status}")
+    move_str = "augh"
+    before_fen, after_fen, status = board_env.sim_move(move_str)
+    print(f"Invalid move '{move_str}' -> Status: {status}")
 
     # Example of making a move
     if parsed_move != chess.Move.null():
