@@ -169,12 +169,12 @@ class BoardEnv:
             return True
         return False
 
-    class SimMoveError(Enum):
+    class SimMoveStatus(Enum):
         ILLEGAL_MOVE = "illegal_move"
         UNPARSEABLE_MOVE = "unparseable_move"
         LEGAL_MOVE = "legal_move"
 
-    def sim_move(self, move: chess.Move, illegal_move_penalty: float = -3.0, unparseable_move_penalty: float = -10) -> Tuple[str, str, SimMoveError]:
+    def sim_move(self, move: chess.Move) -> Tuple[str, str, SimMoveStatus]:
         """
         Get the before and after board states of a move. Returns error object if move is illegal or unparseable.
         
@@ -195,11 +195,11 @@ class BoardEnv:
         if move in temp_board.legal_moves:
             temp_board.push(move)
             after_fen = temp_board.fen()
-            return before_fen, after_fen, self.SimMoveError.LEGAL_MOVE
+            return before_fen, after_fen, self.SimMoveStatus.LEGAL_MOVE
         elif move == chess.Move.null(): 
-            return before_fen, after_fen, self.SimMoveError.UNPARSEABLE_MOVE
+            return before_fen, after_fen, self.SimMoveStatus.UNPARSEABLE_MOVE
         else:
-            return before_fen, after_fen, self.SimMoveError.ILLEGAL_MOVE
+            return before_fen, after_fen, self.SimMoveStatus.ILLEGAL_MOVE
     
     def get_legal_moves(self) -> list[chess.Move]:
         """Get list of all legal moves in the current position."""
@@ -246,10 +246,10 @@ if __name__ == "__main__":
     print(f"Parsed move from LLM output '{llm_output}': {parsed_move}")
     
     # Example of simulating a move
-    before_fen, after_fen, error = board_env.sim_move(parsed_move)
+    before_fen, after_fen, status = board_env.sim_move(parsed_move)
     print(f"Before move FEN: {before_fen}")
     print(f"After move FEN: {after_fen}")
-    print(f"Error: {error}")
+    print(f"Status: {status}")
 
     # Example of making a move
     if parsed_move != chess.Move.null():
