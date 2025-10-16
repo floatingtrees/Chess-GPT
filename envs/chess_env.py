@@ -72,13 +72,13 @@ class BoardEnv:
         # enumerate the actual legal EP moves (could be 0, 1, or 2)
         ep_moves = [m for m in self.board.legal_moves if self.board.is_en_passant(m)]
         movers = " ".join(sorted(chess.square_name(m.from_square) for m in ep_moves)) or "None"
-        uci = ", ".join(m.uci() for m in ep_moves) or "None"
+        sans = ", ".join(self.board.san(m) for m in ep_moves) or "None"
         return (
             f"""<EN_PASSANT>
         Has legal EP now: {has_ep}
         Target square: {target}
         Capturing pawn(s): {movers}
-        Moves (UCI): {uci}
+        Moves (SAN notation): {sans}
         </EN_PASSANT>"""
         )
     
@@ -96,11 +96,11 @@ class BoardEnv:
         }
         # Castle moves that are legal *in the current position/turn*
         legal_castles = [m for m in self.board.legal_moves if self.board.is_castling(m)]
-        castles_uci = [m.uci() for m in legal_castles]
+        castles_sans = [self.board.san(m) for m in legal_castles]
         return (
             f"""\t<CASTLING>
         Rights: {rights}
-        Legal castle moves now (UCI): {', '.join(castles_uci) if castles_uci else 'None'}
+        Legal castle moves now (SAN notation): {', '.join(castles_sans) if castles_sans else 'None'}
     </CASTLING>"""
         )
     
@@ -115,10 +115,9 @@ class BoardEnv:
     You will be given board state within the <BOARD> tag.
     You will be given misc info (en passant, castling, etc.) within the <MISC_INFO> tag.
     You will be given the turn (white to move or black to move) within the <TURN> tag which indicates which player you are.
-    You will be given a move in the format of <MOVE>[your move here as UCI string]</MOVE> where the contents of MOVE are UCI strings (source piece's square to destination square)
     </META_GUIDANCE>
     <INSTRUCTIONS>
-    You will be RESPONDING with a final move in the format of <MOVE>[your move here as UCI string]</MOVE> where the contents of MOVE are UCI strings (source piece's square to destination square)
+    You will be RESPONDING with a final move in the format of <MOVE>[your move here as SAN notation string]</MOVE> where the contents of MOVE are SAN notation strings. E.g. to move the knight to c3 you will return <MOVE>Nc3</MOVE>.
     </INSTRUCTIONS>
     """
     
@@ -133,7 +132,7 @@ class BoardEnv:
     
     def parse_llm_move(self, output: str) -> chess.Move:
         """
-        Parse LLM output to extract a chess move.
+        Parse LLM output to extract a chess move from SAN format
 
         Pulls the last instance of the MOVE tags
         
@@ -151,26 +150,20 @@ class BoardEnv:
         move_str = output[move_start_index + 6:move_end_index]
 
         try:
-            return chess.Move.from_uci(move_str)
+            return self.board.parse_san(move_str)
         except (IndexError, chess.InvalidMoveError):
             return chess.Move.null()
     
-    def make_move(self, move: Union[chess.Move, str]) -> bool:
+    def make_move(self, move: chess.Move) -> bool:
         """
         Make a move on the board.
         
         Args:
-            move: chess.Move object or UCI string
+            move: chess.Move object
             
         Returns:
             True if move was legal and made, False otherwise
-        """
-        if isinstance(move, str):
-            try:
-                move = chess.Move.from_uci(move)
-            except chess.InvalidMoveError:
-                return False
-        
+        """        
         if move in self.board.legal_moves:
             self.board.push(move)
             return True
@@ -248,7 +241,7 @@ if __name__ == "__main__":
     print("\n" + "="*50 + "\n")
     
     # Example of parsing LLM output
-    llm_output = "yap yap yap <MOVE>f3e5</MOVE>"
+    llm_output = "yap yap yap <MOVE>Ne5</MOVE>"
     parsed_move = board_env.parse_llm_move(llm_output)
     print(f"Parsed move from LLM output '{llm_output}': {parsed_move}")
     
@@ -260,6 +253,7 @@ if __name__ == "__main__":
 
     # Example of making a move
     if parsed_move != chess.Move.null():
+        print(f"Board before move:\n{board_env}")
         success = board_env.make_move(parsed_move)
         print(f"Move made successfully: {success}")
         print(f"Board after move:\n{board_env}")
