@@ -6,7 +6,7 @@
         },
         {
             "role": "assistant",
-            "content": f"<think>{ANALYSIS_GOES_HERE}</think>"
+            "content": f"<think>{ANALYSIS_GOES_HERE}</think>\\boxed\{{move}\}"
         }
     ],
 ]
