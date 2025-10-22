@@ -1,7 +1,7 @@
 import chess
 import math
 from stockfish import Stockfish
-
+from envs.chess_env import BoardEnv
 # --- Constants ---
 FIXED_DEPTH = 15 #this can change if you want a stronger Stockfish
 WIN_PERCENT_NOISE_THRESHOLD = 3.0 #Sometimes playing a good move like in a 0.00 position changes the win percentage by like 1% giving negative rewards
@@ -23,19 +23,20 @@ def _get_cp_from_eval(evaluation: dict) -> int:
     return 0
 
 # --- Main Reward Calculation Logic ---
-def calculate_move_reward(stockfish: Stockfish, fen: str, move: str) -> float:
+def calculate_move_reward(stockfish: Stockfish, fen: str, move: chess.Move) -> float:
     """
     Calculates a scaled reward (-1.0 to 1.0) based on the change in win percentage for a move.
     """
     try:
-        board = chess.Board(fen)
+        board = chess.Board(fen=fen)
 
         if board.is_game_over():
             return GAME_OVER_PENALTY  # Penalty for moving when the game is already over
 
         # The parse_san function will raise a ValueError for illegal or invalid moves
-        parsed_move = board.parse_san(move)
-        
+        #print(move.uci())
+        parsed_move = board.parse_uci(move.uci())
+
         # This check is technically redundant if parse_san works, but good for safety
         if parsed_move not in board.legal_moves:
             return -3.0  # Large penalty for illegal moves
@@ -95,33 +96,37 @@ stockfish_path = "C:\\Chess_Engines\\stockfish\\stockfish-windows-x86-64-avx2.ex
 def reward(board_state: str, model_response: str) -> float:
     """
     This is the final reward function. It takes the board state (FEN) and
-    the model's move (SAN) and returns the calculated reward.
+    the model's response and returns the calculated reward.
     """
     stockfish = Stockfish(path=stockfish_path, depth=FIXED_DEPTH)#it might be faster if stockfish was initialized outside the function
-    return calculate_move_reward(stockfish, board_state, model_response)
+    board = BoardEnv(fen=board_state)
+    parsed_move,_ = board.parse_move(model_response)
+    print(f"Parsed move: {parsed_move}")
+    return calculate_move_reward(stockfish, board_state, parsed_move)
 
 if __name__ == '__main__':
     
     # Erigaisi vs Vokhidov 45th budapest olympiad
     erigaisi_fen = "4nk2/p1r1qpp1/1p5p/3B4/2P2Q1P/1P3R2/P4PK1/8 w - - 1 38"
-    best_move_bf7 = "Bf7"
-    second_best_re3 = "Re3" #move he actually played
-    terrible_move_qxh6 = 'Qxh6'
-    illegal_move = 'Bf8'
-    wrong_notation_move = 'hello'
+    board_env = BoardEnv(fen=erigaisi_fen)
+    best_move_bf7 = f"yapyapyap {board_env.MOVE_START_TAG}Bf7{board_env.MOVE_END_TAG}" #best move
+    #second_best_re3 = "Re3" #move he actually played
+    #terrible_move_qxh6 = 'Qxh6'
+    #illegal_move = 'Bf8'
+    #wrong_notation_move = 'hello'
     
     print("\n--- Erigaisi vs Vokhidov Example ---")
     reward_best = reward(erigaisi_fen, best_move_bf7) #0.05
-    reward_second_best = reward(erigaisi_fen, second_best_re3) #-0.2048
-    reward_terrible = reward(erigaisi_fen, terrible_move_qxh6) #-0.5917
-    reward_illegal = reward(erigaisi_fen,illegal_move) #-3.0
-    reward_wrong_notation = reward(erigaisi_fen,wrong_notation_move) #-5.0
+    #reward_second_best = reward(erigaisi_fen, second_best_re3) #-0.2048
+    #reward_terrible = reward(erigaisi_fen, terrible_move_qxh6) #-0.5917
+    #reward_illegal = reward(erigaisi_fen,illegal_move) #-3.0
+    #reward_wrong_notation = reward(erigaisi_fen,wrong_notation_move) #-5.0
     
     
     print(f"Reward for the best move '{best_move_bf7}': {reward_best:.4f}")
-    print(f"Reward for the second best move '{second_best_re3}': {reward_second_best:.4f}")
-    print(f"Reward for the worst move '{terrible_move_qxh6}': {reward_terrible:.4f}")
-    print(f"Reward for the illegal move '{illegal_move}': {reward_illegal:.4f}")
-    print(f"Reward for the wrong notation move '{wrong_notation_move}': {reward_wrong_notation:.4f}")
+    #print(f"Reward for the second best move '{second_best_re3}': {reward_second_best:.4f}")
+    #print(f"Reward for the worst move '{terrible_move_qxh6}': {reward_terrible:.4f}")
+    #print(f"Reward for the illegal move '{illegal_move}': {reward_illegal:.4f}")
+    #print(f"Reward for the wrong notation move '{wrong_notation_move}': {reward_wrong_notation:.4f}")
     # Tested it on many different positions, seems ok.
 
