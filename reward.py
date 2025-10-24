@@ -92,13 +92,13 @@ def calculate_move_reward(stockfish: Stockfish, fen: str, move: chess.Move) -> f
 
 # path to stockfish
 stockfish_path = "C:\\Chess_Engines\\stockfish\\stockfish-windows-x86-64-avx2.exe"
+stockfish = Stockfish(path=stockfish_path, depth=FIXED_DEPTH)#it might be faster if stockfish was initialized outside the function
 
-def reward(board_state: str, model_response: str) -> float:
+def reward(board_state: str, model_response: str, stockfish: Stockfish) -> float:
     """
     This is the final reward function. It takes the board state (FEN) and
     the model's response and returns the calculated reward.
-    """
-    stockfish = Stockfish(path=stockfish_path, depth=FIXED_DEPTH)#it might be faster if stockfish was initialized outside the function
+    """ 
     board = BoardEnv(fen=board_state)
     parsed_move,_ = board.parse_move(model_response)
     print(f"Parsed move: {parsed_move}")
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     #wrong_notation_move = 'hello'
     
     print("\n--- Erigaisi vs Vokhidov Example ---")
-    reward_best = reward(erigaisi_fen, best_move_bf7) #0.05
+    reward_best = reward(erigaisi_fen, best_move_bf7, stockfish=stockfish) #0.05
     #reward_second_best = reward(erigaisi_fen, second_best_re3) #-0.2048
     #reward_terrible = reward(erigaisi_fen, terrible_move_qxh6) #-0.5917
     #reward_illegal = reward(erigaisi_fen,illegal_move) #-3.0
