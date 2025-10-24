@@ -82,8 +82,7 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
     optimizer = torch.optim.Adam(model.parameters(), lr=2e-5, maximize = True)
     scheduler = LambdaLR(optimizer, lr_lambda=linear_schedule)
     
-    # --- EFFICIENT INITIALIZATION ---
-    # Initialize Stockfish ONCE here
+
     try:
         stockfish = Stockfish(path=STOCKFISH_PATH, depth=FIXED_DEPTH)
     except Exception as e:
@@ -94,11 +93,11 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
     start_time = time.time() # For logging time
 
     for LOGGING_COUNTER_ONLY, iteration_variable in enumerate(iteration_list):
+        #data_for_this_fen = generation_outputs[LOGGING_COUNTER_ONLY * RESPONSES_PER_BATCH: (LOGGING_COUNTER_ONLY + 1) * RESPONSES_PER_BATCH]
+
         
-        # 1. Get the data dictionary for this FEN
         data_for_this_fen = generation_outputs[iteration_variable]
         
-        # 2. Extract components
         base_fen = data_for_this_fen["board_position"]
         system_prompt = data_for_this_fen["system_prompt"]
         chat_logs = data_for_this_fen["chat_logs"] # List of [user, assistant] pairs
@@ -106,7 +105,6 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
         user_prompt = chat_logs[0][0] # first pair, user element
         prompt_messages = [system_prompt, user_prompt]
         
-        # 3. Tokenize prompt to get input_length
         prompt_tokenized = tokenizer.apply_chat_template(
             prompt_messages,
             tokenize=True,
@@ -121,15 +119,11 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
         raw_rewards = []
         rewards = [] # This will store normalized advantages
         
-        # 4. --- Reward Calculation Loop (NOW USING YOUR `reward` FUNCTION) ---
         for i, chat_pair in enumerate(chat_logs):
-            model_response = chat_pair[1]["content"] # Get assistant's response
+            model_response = chat_pair[1]["content"] 
             
             try:
-                # Call the reward function from reward.py
-                # We pass the shared stockfish instance to it
-                reward_value = get_reward_from_fen(base_fen, model_response, stockfish)
-                
+                reward_value = get_reward_from_fen(base_fen, model_response, stockfish)               
             except Exception as e:
                 # Catch any errors from parsing or reward calculation
                 print(f"Error calculating reward for FEN {base_fen}, response '{model_response}': {e}. Assigning penalty.")
@@ -138,7 +132,6 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
             E_reward += reward_value
             raw_rewards.append(reward_value)
         
-        # 5. --- Advantage Normalization ---
         reward_std = statistics.stdev(raw_rewards) if len(raw_rewards) > 1 else 0
         E_reward = E_reward / RESPONSES_PER_BATCH
         print(f"Expected Reward: {E_reward:.4f}, FEN: {base_fen}" )
@@ -154,9 +147,8 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
         # 6. --- Policy Update Loop ---
         for i in range(len(rewards)):
             chat_pair = chat_logs[i]
-            advantage = rewards[i] # Renamed from 'reward' for clarity
+            advantage = rewards[i] 
             
-            # Reconstruct the full chat: [system, user, assistant]
             full_chat_messages = [system_prompt, chat_pair[0], chat_pair[1]]
           
             full_text_tokenized = tokenizer.apply_chat_template(
@@ -216,158 +208,8 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
-            optimizer.zero_.grad()
+            optimizer.zero_grad()
             sys.stdout.flush()
             
     # --- Model Saving ---
-    save_path = "./"
-    model.save_pretrained(f"{save_path}{epoch}_placeholder", weird_custom_arg = True)
-    if epoch != 0:
-        full_precison_model = Qwen2ForCausalLM.from_pretrained(f"./cshs_checkpoints/off_policy_checkpoint_{epoch-1}", torch_dtype = torch.bfloat16)
-    else:
-        full_precison_model = Qwen2ForCausalLM.from_pretrained("Qwen/Qwen2.5-7B-Instruct", torch_dtype = torch.bfloat16)
     
-    merge_model=PeftModel.from_pretrained(full_precison_model, f"{save_path}{epoch}_placeholder")
-    merge_model = merge_model.merge_and_unload()
-    try:
-        merge_model.disable_adapters()
-    except Exception as e:
-        print(e)
-    merge_model.save_pretrained(f"./cshs_checkpoints/off_policy_checkpoint_{epoch}")
-    tokenizer.save_pretrained(f"./cshs_checkpoints/off_policy_checkpoint_{epoch}")
-
-# --- Utility Functions ---
-import re
-
-def print_gpu_memory():
-    print(f"Allocated memory: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
-    print(f"Cached memory: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
-
-import gc
-def clear_vram():
-    gc.collect()
-    torch.cuda.empty_cache()
-    torch.cuda.synchronize()
-    
-# --- Main Execution ---
-MAXIMUM_GENERATION_LENGTH = 50 
-NUM_GRAD_ACCUMULATION_EXAMPLES = 1
-RESPONSES_PER_BATCH = 33 
-start = time.time()
-mp.set_start_method("spawn", force=True)
-
-if __name__ == '__main__':
-    import wandb
-    wandb.init(project="GRPO-chess-off-policy") 
-    
-    def queue_logger(result_queue):
-        while True:
-            if not result_queue.empty():
-                wandb.log(result_queue.get())
-            else:
-                time.sleep(0.01)
-                
-    for epoch in range(0, 100):
-        
-        # --- Data Generation Phase ---
-        if epoch != 0:
-            model_path = f"./cshs_checkpoints/off_policy_checkpoint_{epoch-1}"
-            llm = LLM(model=model_path)
-        else:
-            model_path = "Qwen/Qwen2.5-7B-Instruct"
-            try:
-                print("Epoch 0: Loading pre-generated data...")
-                with open(f'./chess_llm_data/generated_data_0.json', 'r') as f:
-                    generation_outputs = json.load(f)
-                with open(f'./chess_llm_data/first_list_0.json', 'r') as f:
-                    iteration_list = json.load(f)
-                print("Successfully loaded epoch 0 data.")
-                
-                clear_vram()
-                result_queue = mp.Queue()
-                logging_thread = threading.Thread(target=queue_logger, args=(result_queue,), daemon=True)
-                logging_thread.start()
-                
-                p = mp.Process(target=memory_isolated_train_step, args=(generation_outputs, iteration_list, epoch, result_queue))
-                p.start()
-                p.join()  
-                clear_vram()
-                print(f"Epoch {epoch} complete.")
-                print_gpu_memory()
-                continue
-            
-            except FileNotFoundError:
-                print("Epoch 0 data not found. Generating initial data from base model...")
-                llm = LLM(model=model_path)
-
-        # --- Data Generation Logic ---
-        local_max_length = len(data)
-        iteration_list = list(range(local_max_length))
-        random.shuffle(iteration_list)
-        # iteration_list = iteration_list[:10] # Optional: Use a subset
-
-        with open(f'./chess_llm_data/first_list_{epoch}.json', 'w') as f:
-            json.dump(iteration_list, f)
-
-        sampling_params = SamplingParams(temperature=0.7, top_p=0.8, repetition_penalty=1.05, max_tokens=MAXIMUM_GENERATION_LENGTH)
-        
-        generation_list_for_vllm = []
-        generation_outputs = []
-        
-        print(f"Epoch {epoch}: Generating {len(iteration_list) * RESPONSES_PER_BATCH} responses...")
-        
-        for LOGGING_COUNTER_ONLY, iteration_variable in enumerate(iteration_list):
-            fen = data[iteration_variable]
-            messages = [
-                {"role": "system", "content": "You are a chess grandmaster AI. Provide your move in SAN."},
-                {"role": "user", "content": f"FEN: {fen}\nYour move:"}
-            ]
-            text_for_vllm = tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            for i in range(RESPONSES_PER_BATCH):
-                generation_list_for_vllm.append(text_for_vllm)
-        
-        outputs = llm.generate(generation_list_for_vllm, sampling_params)
-
-        output_index = 0
-        for iteration_variable in iteration_list:
-            fen = data[iteration_variable]
-            
-            system_prompt = {"role": "system", "content": "You are a chess grandmaster AI. Provide your move in SAN."}
-            user_prompt = {"role": "user", "content": f"FEN: {fen}\nYour move:"}
-            
-            chat_logs_for_this_fen = []
-            for _ in range(RESPONSES_PER_BATCH):
-                output = outputs[output_index]
-                generated_text = output.outputs[0].text.strip()
-                assistant_response = {"role": "assistant", "content": generated_text}
-                
-                chat_logs_for_this_fen.append([user_prompt, assistant_response])
-                output_index += 1
-            
-            generation_outputs.append({
-                "board_position": fen,
-                "system_prompt": system_prompt, 
-                "chat_logs": chat_logs_for_this_fen
-            })
-        
-        os.makedirs("./chess_llm_data", exist_ok=True)
-        with open(f'./chess_llm_data/generated_data_{epoch}.json', 'w') as f:
-            json.dump(generation_outputs, f)
-        del llm
-        
-        # --- Training Phase ---
-        print(f"Epoch {epoch}: Starting training process...")
-        clear_vram()
-        result_queue = mp.Queue()
-        logging_thread = threading.Thread(target=queue_logger, args=(result_queue,), daemon=True)
-        logging_thread.start()
-        
-        p = mp.Process(target=memory_isolated_train_step, args=(generation_outputs, iteration_list, epoch, result_queue))
-        p.start()
-        p.join() 
- 
-        clear_vram()
-        print(f"Epoch {epoch} complete.")
-        print_gpu_memory()
