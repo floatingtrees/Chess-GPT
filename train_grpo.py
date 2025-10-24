@@ -20,12 +20,10 @@ from torch.optim.lr_scheduler import LambdaLR
 import torch.multiprocessing as mp
 import threading
 
-# --- Imports from reward.py ---
 import chess
 import math
 from stockfish import Stockfish
-from envs.chess_env import BoardEnv  # <-- ASSUMES 'envs.chess_env' is available
-# Import the new reward function and constants
+from envs.chess_env import BoardEnv
 from reward import (
     reward as get_reward_from_fen, # Rename to avoid conflict with 'reward' variable
     FIXED_DEPTH 
@@ -36,21 +34,10 @@ STOCKFISH_PATH = "C:\\Chess_Engines\\stockfish\\stockfish-windows-x86-64-avx2.ex
 
 torch.set_default_dtype(torch.bfloat16)
 
-# --- Original Script Components (Adapted) ---
 
 quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 device = "cuda"
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
-
-# Load your chess data (list of FENs)
-try:
-    with open("chess_positions.txt", "r") as f:
-        data = [line.strip() for line in f if line.strip()]
-    print(f"Loaded {len(data)} chess positions.")
-except FileNotFoundError:
-    print("Error: 'chess_positions.txt' not found. Please create this file with one FEN per line.")
-    print("Using dummy data for demonstration...")
-    data = ["rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"] * 100
 
 def linear_schedule(step):
     step += 1
@@ -211,5 +198,4 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
             optimizer.zero_grad()
             sys.stdout.flush()
             
-    # --- Model Saving ---
-    
+ 
