@@ -44,85 +44,8 @@ WIN_PERCENT_NOISE_THRESHOLD = 3.0
 SMALL_CHANGE_BONUS = 0.05
 GAME_OVER_PENALTY = -1.5
 
-# --- Stockfish Path ---
-# This path MUST be correct for the script to work
 stockfish_path = "C:\\Chess_Engines\\stockfish\\stockfish-windows-x86-64-avx2.exe"
-
-# --- Helper Functions ---
-def get_win_percentage(centipawns: int) -> float:
-    """Converts centipawn evaluation to a win percentage (from 0 to 100)."""
-    clipped_cp = max(-1500, min(1500, centipawns))
-    return 50 + 50 * (2 / (1 + math.exp(-0.00368208 * clipped_cp)) - 1)
-
-def _get_cp_from_eval(evaluation: dict) -> int:
-    """Helper function to handle both 'cp' and 'mate' evaluations."""
-    if evaluation['type'] == 'cp':
-        return evaluation['value']
-    elif evaluation['type'] == 'mate':
-        # Use a very large number for mate
-        return 30000 if evaluation['value'] > 0 else -30000
-    return 0
-
-# --- Main Reward Calculation Logic ---
-def calculate_move_reward(stockfish: Stockfish, fen: str, move: chess.Move) -> float:
-    """
-    Calculates a scaled reward (-1.0 to 1.0) based on the change in win percentage for a move.
-    """
-    try:
-        board = chess.Board(fen=fen)
-
-        if board.is_game_over():
-            return GAME_OVER_PENALTY
-
-        # We receive a move object, so we just need to check legality
-        if move not in board.legal_moves:
-            print(f"Illegal move received: {move.uci()}")
-            return -3.0  # Large penalty for illegal moves
-
-        # --- Get Evaluation BEFORE the move ---
-        stockfish.set_fen_position(fen)
-        eval_before = stockfish.get_evaluation()
-        cp_before = _get_cp_from_eval(eval_before)
-
-        # --- Make the Move and Check Post-Move Terminal States ---
-        board.push(move)
-        if board.is_checkmate():
-            return 1.0  # Max reward for delivering checkmate
-        if board.is_stalemate() or board.is_insufficient_material():
-            return 0.0  # Neutral reward for a draw
-
-        # --- Get Evaluation AFTER the move ---
-        stockfish.set_fen_position(board.fen())
-        eval_after = stockfish.get_evaluation()
-        cp_after = _get_cp_from_eval(eval_after)
-        
-        # --- Calculate Win Percentage Change ---
-        if board.turn == chess.BLACK: # White just moved
-            win_percent_before = get_win_percentage(cp_before)
-            win_percent_after = get_win_percentage(cp_after)
-        else: # Black just moved
-            win_percent_before = get_win_percentage(-cp_before)
-            win_percent_after = get_win_percentage(-cp_after)
-
-        change = win_percent_after - win_percent_before
-        reward = 0.0
-
-        # --- Noise threshold ---
-        if abs(change) < WIN_PERCENT_NOISE_THRESHOLD:
-            reward = SMALL_CHANGE_BONUS 
-        else:
-            reward = change / 100.0 # Scale reward
-
-        return reward
-    
-    except Exception as e:
-        print(f"An unexpected error occurred in calculate_move_reward: {e}")
-        return -5.0
-
-# ==============================================================================
-# === END: CHESS REWARD LOGIC ===
-# ==============================================================================
-
+import reward
 
 def linear_schedule(step):
     step += 1
@@ -152,15 +75,6 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
     beta = 0.01
     optimizer = torch.optim.Adam(model.parameters(), lr=2e-5, maximize = True)
     scheduler = LambdaLR(optimizer, lr_lambda=linear_schedule)
-    
-    # --- OPTIMIZATION: Initialize Stockfish ONCE per process ---
-    try:
-        stockfish = Stockfish(path=stockfish_path, depth=FIXED_DEPTH)
-    except Exception as e:
-        print(f"!!!!!!!!!!!!!! FAILED TO INITIALIZE STOCKFISH !!!!!!!!!!!!!!")
-        print(f"Error: {e}")
-        print("Exiting training process.")
-        return # Exit the function if stockfish can't load
 
     # --- Main Training Loop (Iterating over prompts) ---
     for LOGGING_COUNTER_ONLY, iteration_variable in enumerate(iteration_list):
@@ -181,33 +95,10 @@ def memory_isolated_train_step(generation_outputs, iteration_list, epoch, result
         
         # --- START: CHESS REWARD LOOP ---
         # This loop calculates the reward for each of the 33 generated moves
-        for i, element in enumerate(relevant_chunks):
-            # `element` is now your dictionary: {“chat_logs”: ..., “board_position”: ...}
+        
             
-            # Get the model's raw text response
-            model_response_text = element["chat_logs"][0][1]["content"]
-            # Get the FEN string
-            board_fen = element["board_position"]
-
-            try:
-                # Use BoardEnv to parse the move from the raw text
-                board_env = BoardEnv(fen=board_fen)
-                parsed_move, _ = board_env.parse_move(model_response_text)
-                
-                if parsed_move is None:
-                    raise ValueError(f"No move found in response: {model_response_text}")
-
-                # Call the core reward logic with the pre-initialized stockfish
-                reward = calculate_move_reward(stockfish, board_fen, parsed_move)
-                if reward > -3.0: # -3.0 is the illegal move penalty
-                    num_legal_moves += 1
-
-            except Exception as e:
-                print(f"Error parsing move or getting reward: {e}")
-                reward = -5.0 # Penalty for parsing error / wrong notation
-            
-            E_reward += reward
-            raw_rewards.append(reward)
+        E_reward += reward
+        raw_rewards.append(reward)
 
         # --- Reward Normalization (This is the "GR" in GRPO) ---
         reward_std = 0.0
