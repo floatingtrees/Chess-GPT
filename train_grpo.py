@@ -35,42 +35,70 @@ quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 device = "cuda"
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-8B")
 
-
+    
 def clear_vram() -> None:
     """Clear the VRAM memory."""
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
 
-def save_model(tokenizer_var, epoch):
-    """Save the trained model."""
-    print("Converting to full-precision model...")
+def save_model(model, tokenizer_var, epoch, base_model_name="Qwen/Qwen3-8B"):
+    """Save trained model by merging LoRa adapter weights"""
+    print(f"Saving model from epoch {epoch}")
 
-    #base model load
-    full_base_model = Qwen3ForCausalLM.from_pretrained(
-        "Qwen/Qwen3-8B",
-        torch_dtype=torch.bfloat16,
-        #device_map="cpu" #if needed
-    )
-
-    #load adapter
-    from peft import PeftModel
+    # Path where adapter was saved
     adapter_path = f"./cshs_checkpoints/adapter_epoch_{epoch}"
-    full_model = PeftModel.from_pretrained(full_base_model, adapter_path)
-
-    #merge the LoRa adapters and save
-    merged = full_model.merge_and_unload()
     output_path = f"./cshs_checkpoints/full_model_epoch_{epoch}"
 
-    merged.save_pretrained(
+    try:
+        # if model already in memory
+        merged_model = model.merge_and_unload()
+
+        # saves model after merging
+        merged_model.save_pretrained(
+            output_path,
+            safe_serialization=True,
+            max_shard_size="5GB"
+        )
+        tokenizer_var.save_pretrained(output_path)
+        print(f"✓ Full model saved to {output_path}")
+
+    except Exception as e:
+        print(f"Error during merge: {e}")
+        print("Moving to adapter only save")
+
+        # save adapters
+        model.save_pretrained(adapter_path)
+        tokenizer_var.save_pretrained(adapter_path)
+        print(f"✓ Adapter saved to {adapter_path}")
+#these following 2 might be easier memory wise, but im not sure
+def save_adapter(model, model_tokenizer, epoch) -> None:
+    """Saves the LoRa adapter weights to merge later (if we need to use this)"""
+    adapter_path = f"./cshs_checkpoints/adapter_epoch_{epoch}"
+
+    # Save adapter (only ~50MB for r=8)
+    model.save_pretrained(adapter_path)
+    model_tokenizer.save_pretrained(adapter_path)
+
+def merge_adapters(model, tokenizer_var, epoch):
+    """Merge LoRa adapters to base model AT END"""
+    output_path = f"./cshs_checkpoints/full_model_epoch_{epoch}"
+
+    #merge adapters
+    merged_model = model.merge_and_unload()
+
+    merged_model.save_pretrained(
         output_path,
-        safe_serialization=True,
-        max_shard_size="5GB"
+        safe_serialization = True,
+        max_shard_size = "5GB"
     )
     tokenizer_var.save_pretrained(output_path)
 
-    print(f"✓ Full model saved to {output_path}")
+    print(f"Merged model saved to {output_path}")
 
+    #clean memory after
+    del merged_model
+    clear_vram()
 
 def linear_schedule(step):
     step += 1
