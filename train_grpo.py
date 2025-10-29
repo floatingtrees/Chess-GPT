@@ -58,6 +58,8 @@ def clear_vram() -> None:
         torch.cuda.synchronize()
 
 
+#I used AI for the save_model function we still need to look at it
+
 def save_model(model_to_save, tokenizer_var, epoch):
     """
     Save the trained model by merging the adapter.
@@ -221,7 +223,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
         try:
             # Wait for and get data from the generator node
             # This is a blocking call
-            data = reasoning_trace_queue.get()
+            data = reasoning_trace_queue.pop()
             
             if data is None:
                 print("[Trainer] Received None. Shutting down training.")
@@ -229,13 +231,9 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
                 
             start_time = time.time()  # For logging time
 
-            # 5.1. --- Data Extraction ---
-            # Use variable names from the new instruction
             board_state = data["board_position"] # Renamed from board_state
             chat_logs = data["chat_logs"]      # List of [user, assistant] pairs
 
-            # FIX: Correctly format the prompt for the template
-            # `chat_logs[0][0]` is the user dict: {"role": "user", "content": ...}
             user_prompt_dict = chat_logs[0][0]
             prompt_messages = [SYSTEM_PROMPT, user_prompt_dict]
 
@@ -279,7 +277,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
                 for element in raw_rewards:
                     rewards.append((element - E_reward) / reward_std)
 
-            # 6. --- BATCHED Policy Update ---
+            # 6. --- BATCHED Policy --- 
             all_full_chat_messages = []
             for i in range(len(rewards)):
                 chat_pair = chat_logs[i]
