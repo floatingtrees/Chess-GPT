@@ -144,16 +144,7 @@ def linear_schedule(step):
 
 
 def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
-    """
-    Performs continuous GRPO training as a long-running process.
-    
-    Args:
-        model_path (str): Path to the initial model (e.g., "Qwen/Qwen3-8B").
-        reasoning_trace_queue (mp.Queue): Queue to receive data from the generator.
-        stop_inference_queue (mp.Queue): Queue to send new model paths to the generator.
-        GPU_IDX (int): The specific GPU index to run this trainer on.
-    """
-
+ 
     # --- 1. Device and Model Initialization ---
     try:
         # Set the active GPU for this process
@@ -166,14 +157,13 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
 
     tokenizer.pad_token = tokenizer.eos_token
     
-    # Load the base model ONCE at the start.
-    # We will train an adapter on top of this base model.
+    # Load a model. Again not sure if this is correct
     print(f"[Trainer] Loading initial base model from: {model_path}")
     try:
         model = Qwen3ForCausalLM.from_pretrained(
             model_path,
             quantization_config=quantization_config,
-            device_map=device  # Load the 8-bit model directly onto the correct GPU
+            device_map=device 
         )
     except Exception as e:
         print(f"[Trainer] ERROR: Failed to load model {model_path}. {e}")
@@ -184,7 +174,6 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
     model.enable_input_require_grads()
 
     # --- 2. LoRA (PEFT) Setup ---
-    # We add ONE adapter and train it continuously.
     lora_config = LoraConfig(
         r=256,
         lora_alpha=512,
@@ -192,7 +181,6 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
         bias="none",
         task_type="CAUSAL_LM"
     )
-    # We use a consistent adapter name
     adapter_name = "grpo_adapter"
     model.add_adapter(adapter_config=lora_config, adapter_name=adapter_name)
     model.set_adapter(adapter_name)
@@ -214,7 +202,6 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
 
     print(f"[Trainer] Initialization complete. Waiting for data...")
     
-    # These counters persist for the life of the process
     LOGGING_COUNTER_ONLY = 0 # Counts FENs for gradient accumulation
     epoch = 0 # Counts save/update steps
 
@@ -223,6 +210,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
         try:
             # Wait for and get data from the generator node
             # This is a blocking call
+            #.pop() is the correct method i think
             data = reasoning_trace_queue.pop()
             
             if data is None:
@@ -402,3 +390,6 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
             print("[Trainer] Skipping this batch and continuing...")
             clear_vram()
             optimizer.zero_grad()
+
+
+#The save model thing was also refined using AI. We should probably check it
