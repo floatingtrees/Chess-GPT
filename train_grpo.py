@@ -392,4 +392,4 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
             optimizer.zero_grad()
 
 
-#The save model thing was also refined using AI. We should probably check it
+#The save model thing was also refined using AI. We should look at it
