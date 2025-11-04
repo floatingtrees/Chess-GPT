@@ -32,7 +32,6 @@ NUM_GRAD_ACCUMULATION_EXAMPLES = 4  # How many FENs to process before one optimi
 STOCKFISH_PATH = "/scratch/ChessGPT/stockfish/stockfish-engine"  # <-- UPDATE THIS PATH
 
 # --- System Prompt (Moved here as a global constant) ---
-# This is required by the training loop but was missing from the new data structure.
 SYSTEM_PROMPT = {
     "role": "system",
     "content": """You are a world-class chess grandmaster and strategic analyst. Your name is 'Maestro'.
@@ -58,82 +57,6 @@ def clear_vram() -> None:
         torch.cuda.synchronize()
 
 
-#I used AI for the save_model function we still need to look at it
-
-def save_model(model_to_save, tokenizer_var, epoch):
-    """
-    Save the trained model by merging the adapter.
-    
-    Args:
-        model_to_save (PeftModel): The 8-bit quantized model with the adapter.
-        tokenizer_var (AutoTokenizer): The tokenizer to save.
-        epoch (int): The current epoch/save step.
-        
-    Returns:
-        str: The path to the saved full model.
-    """
-    print("Merging adapter and converting to full-precision model...")
-
-    # --- This merging process is memory-intensive ---
-    # We first merge the adapter into the 8-bit model, then unload it
-    # to get a full-precision (bfloat16) model.
-    
-    # It's safer to do this on the CPU to avoid OOM errors on the GPU
-    # which is busy with training.
-    try:
-        # 1. Get the full-precision base model on CPU
-        full_base_model = Qwen3ForCausalLM.from_pretrained(
-            "Qwen/Qwen3-8B",
-            torch_dtype=torch.bfloat16,
-            device_map="cpu" # Load to CPU to save VRAM
-        )
-        
-        # 2. Load the adapter onto the CPU base model
-        adapter_path = f"./cshs_checkpoints/adapter_epoch_{epoch}"
-        print(f"Loading adapter from: {adapter_path}")
-        full_model = PeftModel.from_pretrained(full_base_model, adapter_path)
-        
-        # 3. Merge the adapter weights
-        print("Merging adapter weights on CPU...")
-        merged = full_model.merge_and_unload()
-        output_path = f"./cshs_checkpoints/full_model_epoch_{epoch}"
-
-        # 4. Save the new, merged model
-        print(f"Saving merged model to: {output_path}")
-        merged.save_pretrained(
-            output_path,
-            safe_serialization=True,
-            max_shard_size="5GB"
-        )
-        tokenizer_var.save_pretrained(output_path)
-        
-        print(f"✓ Full model saved to {output_path}")
-        return output_path
-        
-    except Exception as e:
-        print(f"!! FAILED to merge and save model on CPU: {e}")
-        print("Attempting to merge on GPU (may cause OOM)...")
-        try:
-            # Fallback to GPU if CPU merge fails (e.g., PeftModel issue)
-            # This is less safe for memory.
-            merged_gpu = model_to_save.merge_and_unload()
-            output_path = f"./cshs_checkpoints/full_model_epoch_{epoch}"
-            
-            merged_gpu.save_pretrained(output_path, safe_serialization=True, max_shard_size="5GB")
-            tokenizer_var.save_pretrained(output_path)
-            
-            print(f"✓ Full model saved to {output_path} (GPU fallback)")
-            # We must reload the adapter onto the base model, since merge_and_unload() is destructive
-            model_to_save.load_adapter(adapter_path, "default")
-            model_to_save.set_adapter("default")
-            return output_path
-            
-        except Exception as e_gpu:
-            print(f"!! FAILED to merge on GPU as well: {e_gpu}")
-            print("!! Model not saved. Only adapter weights are saved.")
-            return None
-
-
 def linear_schedule(step):
     """Implements a linear warmup for the learning rate."""
     step += 1
@@ -157,7 +80,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
 
     tokenizer.pad_token = tokenizer.eos_token
     
-    # Load a model. Again not sure if this is correct
+    # Load a model
     print(f"[Trainer] Loading initial base model from: {model_path}")
     try:
         model = Qwen3ForCausalLM.from_pretrained(
@@ -188,7 +111,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
 
     # --- 3. Optimizer and Scheduler Setup ---
     beta = 0.01  # KL penalty coefficient
-    optimizer = torch.optim.Adam(model.parameters(), lr=2e-5, maximize=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=2e-5, maximize=False)
     optimizer.zero_grad()  # Clear any old gradients
     scheduler = LambdaLR(optimizer, lr_lambda=linear_schedule)
 
@@ -209,8 +132,6 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
     while True:
         try:
             # Wait for and get data from the generator node
-            # This is a blocking call
-            #.pop() is the correct method i think
             data = reasoning_trace_queue.pop()
             
             if data is None:
@@ -219,8 +140,8 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
                 
             start_time = time.time()  # For logging time
 
-            board_state = data["board_position"] # Renamed from board_state
-            chat_logs = data["chat_logs"]      # List of [user, assistant] pairs
+            board_state = data["board_position"]
+            chat_logs = data["chat_logs"]
 
             user_prompt_dict = chat_logs[0][0]
             prompt_messages = [SYSTEM_PROMPT, user_prompt_dict]
@@ -231,7 +152,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
                 tokenize=True,
                 add_generation_prompt=True,  # Appends the '<|im_start|>assistant\n' tokens
                 return_tensors="pt"
-            ).to(device) # Send to the correct GPU
+            ).to(device)
 
             input_length = prompt_tokenized["input_ids"].shape[1]
             clear_vram()
@@ -281,7 +202,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
                 truncation=True,
                 max_length=4096, 
                 return_tensors="pt"
-            ).to(device) # Send to the correct GPU
+            ).to(device)
 
             batched_input_ids = full_text_tokenized["input_ids"]
             batched_attention_mask = full_text_tokenized["attention_mask"]
@@ -336,12 +257,11 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
             base_loss_per_sequence = sequence_product_ratio * advantages_tensor
             base_loss = torch.mean(base_loss_per_sequence)
 
-            loss = base_loss - beta * kl_divergence
-
             clear_vram()
             torch.cuda.synchronize()
 
             # 6.5. Backpropagation
+            loss = (beta * kl_divergence - base_loss) / NUM_GRAD_ACCUMULATION_EXAMPLES
             loss.backward()
 
             # 6.6. Logging (to console)
@@ -359,24 +279,16 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
                 # Increment save counter
                 epoch += 1
                 
-                # --- Save Adapter Weights (Temporary) ---
-                # This is the lightweight checkpoint of the adapter's state
+                # --- Save Adapter Weights ---
                 adapter_save_path = f"./cshs_checkpoints/adapter_epoch_{epoch}"
                 print(f"[Trainer] Saving adapter to {adapter_save_path}")
                 model.save_pretrained(adapter_save_path)
+                tokenizer.save_pretrained(adapter_save_path)
                 print(f"[Trainer] Adapter saved successfully.")
 
-                # --- Save Full Merged Model ---
-                # This merges the base + adapter and saves the full weights
-                full_model_path = save_model(model, tokenizer, epoch)
-                
-                if full_model_path:
-                    # --- Send New Path to Inference Node ---
-                    # This tells the vLLM node to stop and reload with the new model
-                    print(f"[Trainer] Sending new model path to inference queue: {full_model_path}")
-                    stop_inference_queue.put(full_model_path)
-                else:
-                    print("[Trainer] ERROR: Model merging failed. Not notifying inference node.")
+                # --- Send New Path to Inference Node ---
+                print(f"[Trainer] Sending new adapter path to inference queue: {adapter_save_path}")
+                stop_inference_queue.put(adapter_save_path)
                 
                 sys.stdout.flush()
 
@@ -390,6 +302,3 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
             print("[Trainer] Skipping this batch and continuing...")
             clear_vram()
             optimizer.zero_grad()
-
-
-#The save model thing was also refined using AI. We should look at it
