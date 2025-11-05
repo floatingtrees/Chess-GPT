@@ -4,8 +4,8 @@ import time
 import random
 import openai
 from data_sampler import DataSampler
-
-openai.api_key = "EMPTY"
+//add apikey here
+openai.api_key = ""
 openai.api_base = "http://localhost:8000/v1"  
 
 class Inference:
