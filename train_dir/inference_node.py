@@ -10,13 +10,15 @@ import json
 from queue import Queue
 from copy import deepcopy
 from openai import OpenAI
+from transformers import AutoTokenizer
+
 openai.api_key = "sadf"
 openai.api_base = "http://localhost:8000/v1"  
 sampler = DataSampler("../move_sequences.txt")
 model_file = "Qwen/Qwen3-4B-Thinking-2507"
 temperature = 0.7
 top_p = 0.9
-max_tokens = 5000   
+max_tokens = 500  
 BATCH_SIZE = 8         
 MAX_PARALLEL_BATCHES = 4
 
@@ -42,9 +44,9 @@ def query_model(messages, thread_outputs):
         messages=messages,
         temperature=temperature,
         top_p=top_p,
-        max_tokens=max_tokens,
     )
-    thread_outputs.put(response.choices[0].message["content"])
+    thread_outputs.put(response.choices[0].message.content)
+
 
 def generate_batch(messages, coordination_queue, reasoning_trace_queue):
     coordination_queue.put(0)
@@ -57,18 +59,24 @@ def generate_batch(messages, coordination_queue, reasoning_trace_queue):
         threads.append(thread)
     for thread in threads:
         thread.join()
+    reasoning_list = []
     while not thread_outputs.empty():
         model_generation = thread_outputs.get()
         prompt_generation = deepcopy(messages)
         prompt_generation.append({"role": "assistant", "content": model_generation})
-        reasoning_trace_queue.put(prompt_generation)
+        reasoning_list.append(prompt_generation)
+    reasoning_trace_queue.put(reasoning_list)
     coordination_queue.get()
 
 def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(GPU_IDX)
-    server_process = subprocess.Popen(["vllm", "serve", model_path, "max_model_len=50"],env=env)
-    time.sleep(30)
+    server_process = subprocess.Popen([
+                "vllm", "serve", model_path,
+                "--port", "8000",
+                "--max-model-len", str(max_tokens),
+            ], env=env)
+    time.sleep(20)
     coordination_queue = Queue()
     while True:
         fen = sampler.get_random_position()
@@ -80,19 +88,22 @@ def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue
         
         if not stop_inference_queue.empty():
             model_path = stop_inference_queue.get()
-            server_process.terminate()
+            server_process.kill()
             
             print(f"[INFO] Reloading model: {model_path}")
-            server_process = subprocess.Popen(
-                ["vllm", "serve", model_path],
-                env=env
-            )
+            server_process = subprocess.Popen([
+                "vllm", "serve", model_path,
+                "--port", "8000",
+                "--max-model-len", str(max_tokens),
+            ], env=env)
+            time.sleep(20)
             
 if __name__ == "__main__":
     from multiprocessing import Queue, Process
     reasoning_trace_queue = Queue()
     stop_inference_queue = Queue()
-    args = (model_file, reasoning_trace_queue, stop_inference_queue, 1)
+    args = (model_file, reasoning_trace_queue, stop_inference_queue, 0)
     inference = Process(target=run_inference_server, args=args)
     inference.start()
     print(reasoning_trace_queue.get())
+    exit()
