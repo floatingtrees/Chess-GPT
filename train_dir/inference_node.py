@@ -67,7 +67,11 @@ def generate_batch(messages, coordination_queue, reasoning_trace_queue):
 def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(GPU_IDX)
-    server_process = subprocess.Popen(["vllm", "serve", model_path, "max_model_len=50"],env=env)
+    server_process = subprocess.Popen([
+        "vllm", "serve", model_path,
+        "--port", "8000",
+        "--max-model-len", "500",
+    ], env=env)
     time.sleep(30)
     coordination_queue = Queue()
     while True:
@@ -83,10 +87,12 @@ def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue
             server_process.terminate()
             
             print(f"[INFO] Reloading model: {model_path}")
-            server_process = subprocess.Popen(
-                ["vllm", "serve", model_path],
-                env=env
-            )
+            server_process = subprocess.Popen([
+                "vllm", "serve", model_path,
+                "--port", "8000",
+                "--max-model-len", "500",
+            ], env=env)
+            time.sleep(30)
             
 if __name__ == "__main__":
     from multiprocessing import Queue, Process
