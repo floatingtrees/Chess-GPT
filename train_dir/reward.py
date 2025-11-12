@@ -23,7 +23,7 @@ def _get_cp_from_eval(evaluation: dict) -> int:
     return 0
 
 # --- Main Reward Calculation Logic ---
-def calculate_move_reward(fen: str, move: chess.Move) -> float:
+def calculate_move_reward(stockfish: Stockfish, fen: str, move: chess.Move) -> float:
     """
     Calculates a scaled reward (-1.0 to 1.0) based on the change in win percentage for a move.
     """
@@ -90,18 +90,17 @@ def calculate_move_reward(fen: str, move: chess.Move) -> float:
         print(f"An unexpected error occurred in calculate_move_reward: {e}")
         return -5.0
 
-
 stockfish = Stockfish(path="stockfish", depth=FIXED_DEPTH)#it might be faster if stockfish was initialized outside the function
 
-def reward(board_state: str, model_response: str) -> float:
+def reward(board_state: str, model_response: str, stockfish: Stockfish) -> float:
     """
     This is the final reward function. It takes the board state (FEN) and
     the model's response and returns the calculated reward.
-    """ 
+    """
     board = BoardEnv(fen=board_state)
     parsed_move,_ = board.parse_move(model_response)
     print(f"Parsed move: {parsed_move}")
-    return calculate_move_reward(board_state, parsed_move)
+    return calculate_move_reward(stockfish, board_state, parsed_move)
 
 if __name__ == '__main__':
     
@@ -128,4 +127,3 @@ if __name__ == '__main__':
     #print(f"Reward for the illegal move '{illegal_move}': {reward_illegal:.4f}")
     #print(f"Reward for the wrong notation move '{wrong_notation_move}': {reward_wrong_notation:.4f}")
     # Tested it on many different positions, seems ok.
-
