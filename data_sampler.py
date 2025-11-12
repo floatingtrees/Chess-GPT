@@ -38,9 +38,14 @@ class DataSampler:
         """Return the move list of a random game."""
         game_idx = random.randint(0, self.count_games() - 1)
         return self.move_sequences[game_idx]
-
+    def get_random_positions(self, n):
+        fens = []
+        for i in range(n):
+            fens.append(self.get_random_position())
+        return fens
     async def get_random_positions_async(self, n):
         """Get n random positions asynchronously. Returns a list of FEN strings."""
         loop = asyncio.get_event_loop()
         tasks = [loop.run_in_executor(None, self.get_random_position) for _ in range(n)]
         return await asyncio.gather(*tasks)
+
