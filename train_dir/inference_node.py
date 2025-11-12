@@ -27,8 +27,7 @@ def make_chat(fen):
         {
             "role": "system",
             "content": (
-                "You are a chess reasoning assistant. "
-                "Think step by step. Explicitly write your reasoning before giving your final move, and box your answer in \\boxed{}"
+                "Think quickly and concisely. Box your answer in \\boxed{}"
             )
         },
         {
@@ -48,7 +47,7 @@ def query_model(messages, thread_outputs):
     thread_outputs.put(response.choices[0].message.content)
 
 
-def generate_batch(messages, coordination_queue, reasoning_trace_queue):
+def generate_batch(messages, coordination_queue, reasoning_trace_queue, fen):
     coordination_queue.put(0)
     threads = []
     thread_outputs = Queue()
@@ -65,7 +64,7 @@ def generate_batch(messages, coordination_queue, reasoning_trace_queue):
         prompt_generation = deepcopy(messages)
         prompt_generation.append({"role": "assistant", "content": model_generation})
         reasoning_list.append(prompt_generation)
-    reasoning_trace_queue.put(reasoning_list)
+    reasoning_trace_queue.put({"model_responses": reasoning_list, "board_state": fen})
     coordination_queue.get()
 
 def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
@@ -75,15 +74,17 @@ def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue
                 "vllm", "serve", model_path,
                 "--port", "8000",
                 "--max-model-len", str(max_tokens),
-            ], env=env)
-    time.sleep(20)
+                ], env=env, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL)
+    time.sleep(100)
+    print("Starting Inference")
     coordination_queue = Queue()
     while True:
         fen = sampler.get_random_position()
         messages = make_chat(fen)
         while coordination_queue.qsize() >= MAX_PARALLEL_BATCHES:
             time.sleep(1)
-        t = threading.Thread(target = generate_batch, args=(messages, coordination_queue, reasoning_trace_queue))
+        t = threading.Thread(target = generate_batch, args=(messages, coordination_queue, reasoning_trace_queue, fen))
         t.start()
         
         if not stop_inference_queue.empty():
@@ -95,8 +96,9 @@ def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue
                 "vllm", "serve", model_path,
                 "--port", "8000",
                 "--max-model-len", str(max_tokens),
-            ], env=env)
-            time.sleep(20)
+                ], env=env, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL)
+            time.sleep(100)
             
 if __name__ == "__main__":
     from multiprocessing import Queue, Process
