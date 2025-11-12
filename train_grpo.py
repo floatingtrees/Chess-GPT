@@ -22,14 +22,14 @@ from reward import (
     reward as get_reward_from_fen,  # Rename to avoid conflict with 'reward' variable
     FIXED_DEPTH
 )
-#import bitsandbytes as bnb
+import bitsandbytes as bnb
 
 # --- Hyperparameters ---
 RESPONSES_PER_BATCH = 16  # The 'k' in "sample k responses". How many responses per FEN.
 NUM_GRAD_ACCUMULATION_EXAMPLES = 4  # How many FENs to process before one optimizer step.
 
 # --- Stockfish/Reward Config ---
-STOCKFISH_PATH = "/scratch/ChessGPT/stockfish/stockfish-eng"  # <-- UPDATE THIS PATH
+STOCKFISH_PATH = "/scratch/ChessGPT/stockfish/stockfish-engine"  # <-- UPDATE THIS PATH
 
 # --- System Prompt (Moved here as a global constant) ---
 SYSTEM_PROMPT = {
@@ -166,7 +166,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
                 model_response = chat_pair[1]["content"]
 
                 try:
-                    reward_value = get_reward_from_fen(board_state, model_response)
+                    reward_value = get_reward_from_fen(board_state, model_response, stockfish)
                 except Exception as e:
                     print(
                         f"Error calculating reward for FEN {board_state}, response '{model_response}': {e}. Assigning penalty.")
