@@ -11,7 +11,7 @@ GAME_OVER_PENALTY = -1.5  # Penalty for attempting to move after game is over (c
 # --- Helper Functions ---
 def get_win_percentage(centipawns: int) -> float:
     """Converts centipawn evaluation to a win percentage (from 0 to 100)."""
-    clipped_cp = max(-1500, min(1500, centipawns))
+    clipped_cp = max(-15000, min(15000, centipawns))
     return 50 + 50 * (2 / (1 + math.exp(-0.00368208 * clipped_cp)) - 1)
 
 def _get_cp_from_eval(evaluation: dict) -> int:
@@ -90,9 +90,8 @@ def calculate_move_reward(fen: str, move: chess.Move) -> float:
         print(f"An unexpected error occurred in calculate_move_reward: {e}")
         return -5.0
 
-# path to stockfish
-stockfish_path = "C:\\Chess_Engines\\stockfish\\stockfish-windows-x86-64-avx2.exe"
-stockfish = Stockfish(path=stockfish_path, depth=FIXED_DEPTH)#it might be faster if stockfish was initialized outside the function
+
+stockfish = Stockfish(path="stockfish", depth=FIXED_DEPTH)#it might be faster if stockfish was initialized outside the function
 
 def reward(board_state: str, model_response: str) -> float:
     """

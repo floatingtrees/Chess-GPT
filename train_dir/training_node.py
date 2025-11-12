@@ -20,9 +20,11 @@ from torch.optim.lr_scheduler import LambdaLR
 from stockfish import Stockfish
 # Assuming these are in the python path or relative
 from envs.chess_env import BoardEnv
-#from reward import (reward as get_reward_from_fen, FIXED_DEPTH)
+from reward import (reward as get_reward_from_fen, FIXED_DEPTH)
+'''
 def get_reward_from_fen(x, y):
     return random.random()
+'''
 
 import bitsandbytes as bnb
 RESPONSES_PER_BATCH = 8  # The 'k' in "sample k responses". How many responses per FEN.
