@@ -106,10 +106,16 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
     print(f"[Trainer] Initialization complete. Waiting for data...")
     
     LOGGING_COUNTER_ONLY = 0 # Counts FENs for gradient accumulation
-    epoch = 0 # Counts save/update steps
 
     # --- 5. Main Training Loop (Continuous) ---
     while True:
+        
+        if LOGGING_COUNTER_ONLY % 10 == 0:
+            save_path = f"/scratch/{LOGGING_COUNTER_ONLY}"
+            model.save_pretrained(save_path)
+            tokenizer.save_pretrained(save_path)
+            stop_inference_queue.put(save_path)
+        LOGGING_COUNTER_ONLY += 1
         # Wait for and get data from the generator node
         data = reasoning_trace_queue.get()
         chat_logs = data["model_responses"]
@@ -148,7 +154,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
         reward_std = statistics.stdev(raw_rewards)
         E_reward = E_reward / RESPONSES_PER_BATCH
         print(f"[FEN {LOGGING_COUNTER_ONLY+1}] Expected Reward: {E_reward:.4f}, FEN: {board_state}")
-        print(chat_logs)
+
         if reward_std == 0:
             print("Zero advantage, skipping batch.")
             continue  # Skip to the next item in the queue

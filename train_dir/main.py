@@ -7,8 +7,8 @@ if __name__ == "__main__":
     model_path = "Qwen/Qwen2.5-7B-Instruct"
     reasoning_trace_queue = Queue()
     stop_inference_queue = Queue()
-    args = (model_path, reasoning_trace_queue, stop_inference_queue, 2)
+    args = (model_path, reasoning_trace_queue, stop_inference_queue, 1)
     inference = Process(target=run_inference_server, args=args)
     inference.start()
-    train(model_path, reasoning_trace_queue, stop_inference_queue, 3)
+    train(model_path, reasoning_trace_queue, stop_inference_queue, 2)
     inference.join()

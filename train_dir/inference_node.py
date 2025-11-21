@@ -11,39 +11,50 @@ from queue import Queue
 from copy import deepcopy
 from openai import OpenAI
 from transformers import AutoTokenizer
+import os, signal, time
+
+              # small grace, optional
 
 openai.api_key = "sadf"
 openai.api_base = "http://localhost:8000/v1"  
+lora_name = "chess"
 sampler = DataSampler("../move_sequences.txt")
 temperature = 0.7
 top_p = 0.9
-max_tokens = 5000
+max_tokens = 3000
 BATCH_SIZE = 8         
 MAX_PARALLEL_BATCHES = 4
+import sys 
+sys.stdout = open("inference.log", "w")
+sys.stderr = open("inference_err.log", "w")
 
 def make_chat(fen):
     return [
         {
             "role": "system",
             "content": (
-                "Think in detail, and explain your reasoning. Box your answer in \\boxed{}"
+                "Think in detail. Box your answer in \\boxed{}"
             )
         },
         {
             "role": "user",
-            "content": f"Given this FEN position, what is the best move? {fen}"
+            "content": f"Reason carefully and visualize the chessboard before making a move. Given this FEN position, what is the best move? {fen}"
         }
     ]
 
 def query_model(messages, model_path, thread_outputs):
-    client = OpenAI(base_url = "http://localhost:8000/v1", api_key="asdf")
-    response = client.chat.completions.create(
-        model=model_path,
-        messages=messages,
-        temperature=temperature,
-        top_p=top_p,
-    )
-    thread_outputs.put(response.choices[0].message.content)
+    try:
+        client = OpenAI(base_url = "http://localhost:8000/v1", api_key="asdf")
+        response = client.chat.completions.create(
+            model=model_path,
+            messages=messages,
+            temperature=temperature,
+            top_p=top_p,
+        )
+        thread_outputs.put(response.choices[0].message.content)
+    except Exception as e:
+        print(e)
+        print(model_path)
 
 
 def generate_batch(messages, coordination_queue, reasoning_trace_queue, fen, model_path):
@@ -73,31 +84,48 @@ def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue
                 "vllm", "serve", model_path,
                 "--port", "8000",
                 "--max-model-len", str(max_tokens),
-                ], env=env, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL)
-    time.sleep(40)
+                ], env=env, start_new_session=True)
+    time.sleep(50)
     print("Starting Inference")
     coordination_queue = Queue()
+    threads = []
     while True:
+        WEIRD_MODEL_NAME = model_path
         fen = sampler.get_random_position()
         messages = make_chat(fen)
         while coordination_queue.qsize() >= MAX_PARALLEL_BATCHES:
             time.sleep(1)
-        t = threading.Thread(target = generate_batch, args=(messages, coordination_queue, reasoning_trace_queue, fen, model_path))
+        t = threading.Thread(target = generate_batch, args=(messages, coordination_queue, reasoning_trace_queue, fen, WEIRD_MODEL_NAME))
         t.start()
+        threads.append(t)
         
         if not stop_inference_queue.empty():
-            model_path = stop_inference_queue.get()
-            server_process.kill()
+            print("DETECTED CHANGE")
+            sys.stdout.flush()
+            for thread in threads:
+                thread.join()
+            threads = []
+            lora_path = stop_inference_queue.get()
+            pgid = server_process.pid 
+            os.killpg(pgid, signal.SIGKILL) 
+            server_process.wait()
+            time.sleep(3)      
             
-            print(f"[INFO] Reloading model: {model_path}")
+            print(f"[INFO] Reloading LORA: {lora_path}")
             server_process = subprocess.Popen([
                 "vllm", "serve", model_path,
                 "--port", "8000",
                 "--max-model-len", str(max_tokens),
-                ], env=env, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL)
-            time.sleep(100)
+                 "--enable-lora",
+                "--max-lora-rank", "256",
+                "--max-loras", "4",
+
+                "--lora-modules", f"{lora_name}={lora_path}",
+                ], env=env, start_new_session=True)
+            WEIRD_MODEL_NAME = lora_name
+            time.sleep(50)
+            print("Model reloaded.")
+        sys.stdout.flush()
             
 if __name__ == "__main__":
     from multiprocessing import Queue, Process
