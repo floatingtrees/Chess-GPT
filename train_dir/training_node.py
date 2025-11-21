@@ -144,8 +144,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
 
             E_reward += reward_value
             raw_rewards.append(reward_value)
-        print(raw_rewards)
-        exit()
+
         reward_std = statistics.stdev(raw_rewards)
         E_reward = E_reward / RESPONSES_PER_BATCH
         print(f"[FEN {LOGGING_COUNTER_ONLY+1}] Expected Reward: {E_reward:.4f}, FEN: {board_state}")
