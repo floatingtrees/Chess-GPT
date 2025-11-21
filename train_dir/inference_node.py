@@ -27,7 +27,7 @@ def make_chat(fen):
         {
             "role": "system",
             "content": (
-                "Think quickly and concisely. Box your answer in \\boxed{}"
+                "Think in detail, and explain your reasoning. Box your answer in \\boxed{}"
             )
         },
         {
@@ -36,7 +36,7 @@ def make_chat(fen):
         }
     ]
 
-def query_model(messages, thread_outputs):
+def query_model(messages, model_path, thread_outputs):
     client = OpenAI(base_url = "http://localhost:8000/v1", api_key="asdf")
     response = client.chat.completions.create(
         model=model_file,
@@ -47,13 +47,13 @@ def query_model(messages, thread_outputs):
     thread_outputs.put(response.choices[0].message.content)
 
 
-def generate_batch(messages, coordination_queue, reasoning_trace_queue, fen):
+def generate_batch(messages, coordination_queue, reasoning_trace_queue, fen, model_path):
     coordination_queue.put(0)
     threads = []
     thread_outputs = Queue()
 
     for i in range(BATCH_SIZE):
-        thread = threading.Thread(target = query_model, args = (messages, thread_outputs))
+        thread = threading.Thread(target = query_model, args = (messages, model_path, thread_outputs))
         thread.start()
         threads.append(thread)
     for thread in threads:
@@ -84,7 +84,7 @@ def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue
         messages = make_chat(fen)
         while coordination_queue.qsize() >= MAX_PARALLEL_BATCHES:
             time.sleep(1)
-        t = threading.Thread(target = generate_batch, args=(messages, coordination_queue, reasoning_trace_queue, fen))
+        t = threading.Thread(target = generate_batch, args=(messages, coordination_queue, reasoning_trace_queue, fen, model_path))
         t.start()
         
         if not stop_inference_queue.empty():

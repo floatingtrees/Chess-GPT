@@ -4,11 +4,11 @@ from training_node import train
 
 
 if __name__ == "__main__":
-    model_path = "Qwen/Qwen3-4B-Thinking-2507"
+    model_path = "Qwen/Qwen2.5-7B-Instruct"
     reasoning_trace_queue = Queue()
     stop_inference_queue = Queue()
-    args = (model_path, reasoning_trace_queue, stop_inference_queue, 0)
+    args = (model_path, reasoning_trace_queue, stop_inference_queue, 2)
     inference = Process(target=run_inference_server, args=args)
     inference.start()
-    train(model_path, reasoning_trace_queue, stop_inference_queue, 1)
+    train(model_path, reasoning_trace_queue, stop_inference_queue, 3)
     inference.join()

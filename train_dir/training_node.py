@@ -4,11 +4,11 @@ import os
 # Set device visibility *before* importing torch
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import time
-
+import sys
 time.sleep(0.01)
 import torch
 import torch.nn.functional as F
-from transformers import Qwen3ForCausalLM, BitsAndBytesConfig, AutoConfig
+from transformers import AutoModelForCausalLM, BitsAndBytesConfig, AutoConfig
 from transformers import AutoTokenizer
 from peft import LoraConfig, get_peft_model, PeftModel
 import statistics
@@ -71,7 +71,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
     # Load a model
     print(f"[Trainer] Loading initial base model from: {model_path}")
     try:
-        model = Qwen3ForCausalLM.from_pretrained(
+        model = AutoModelForCausalLM.from_pretrained(
             model_path,
             quantization_config=quantization_config,
             device_map=device 
@@ -147,7 +147,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
         reward_std = statistics.stdev(raw_rewards)
         E_reward = E_reward / RESPONSES_PER_BATCH
         print(f"[FEN {LOGGING_COUNTER_ONLY+1}] Expected Reward: {E_reward:.4f}, FEN: {board_state}")
-
+        print(chat_logs)
         if reward_std == 0:
             print("Zero advantage, skipping batch.")
             continue  # Skip to the next item in the queue
@@ -203,6 +203,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
             loss.backward()
             print(torch.prod(clipped_policy_ratio))
         optimizer.step()
+        sys.stdout.flush()
 
         
 
