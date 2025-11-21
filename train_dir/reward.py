@@ -67,16 +67,7 @@ def calculate_move_reward(fen: str, move: chess.Move) -> float:
             win_percent_after = get_win_percentage(-cp_after)
 
         change = win_percent_after - win_percent_before
-        reward = 0.0
-
-        # 7. Noise threshold
-        if abs(change) < WIN_PERCENT_NOISE_THRESHOLD:
-            reward = SMALL_CHANGE_BONUS 
-        #if needed we can actually check for best move
-        # however i find this good enough and the centipawn change the wp by +-3% after getting the move
-        else:
-            # Scale the reward
-            reward = change / 100.0
+        reward = change / 100.0
 
         return reward
     
@@ -99,6 +90,8 @@ def reward(board_state: str, model_response: str) -> float:
     the model's response and returns the calculated reward.
     """ 
     board = BoardEnv(fen=board_state)
+    board.MOVE_START_TAG = "\\boxed{"
+    board.MOVE_END_TAG = "}"
     parsed_move,_ = board.parse_move(model_response)
     print(f"Parsed move: {parsed_move}")
     return calculate_move_reward(board_state, parsed_move)

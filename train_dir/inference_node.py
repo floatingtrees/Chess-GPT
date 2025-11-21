@@ -75,7 +75,7 @@ def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue
                 "--max-model-len", str(max_tokens),
                 ], env=env, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL)
-    time.sleep(100)
+    time.sleep(40)
     print("Starting Inference")
     coordination_queue = Queue()
     while True:
