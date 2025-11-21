@@ -15,7 +15,6 @@ from transformers import AutoTokenizer
 openai.api_key = "sadf"
 openai.api_base = "http://localhost:8000/v1"  
 sampler = DataSampler("../move_sequences.txt")
-model_file = "Qwen/Qwen3-4B-Thinking-2507"
 temperature = 0.7
 top_p = 0.9
 max_tokens = 5000
@@ -39,7 +38,7 @@ def make_chat(fen):
 def query_model(messages, model_path, thread_outputs):
     client = OpenAI(base_url = "http://localhost:8000/v1", api_key="asdf")
     response = client.chat.completions.create(
-        model=model_file,
+        model=model_path,
         messages=messages,
         temperature=temperature,
         top_p=top_p,
@@ -104,7 +103,8 @@ if __name__ == "__main__":
     from multiprocessing import Queue, Process
     reasoning_trace_queue = Queue()
     stop_inference_queue = Queue()
-    args = (model_file, reasoning_trace_queue, stop_inference_queue, 0)
+    model_path = "Qwen/Qwen2.5-7B-Instruct"
+    args = (model_path, reasoning_trace_queue, stop_inference_queue, 0)
     inference = Process(target=run_inference_server, args=args)
     inference.start()
     print(reasoning_trace_queue.get())
