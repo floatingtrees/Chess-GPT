@@ -110,8 +110,8 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
     # --- 5. Main Training Loop (Continuous) ---
     while True:
         
-        if LOGGING_COUNTER_ONLY % 10 == 0:
-            save_path = f"/scratch/{LOGGING_COUNTER_ONLY}"
+        if LOGGING_COUNTER_ONLY % 100 == 0:
+            save_path = f"/scratch/grpo{LOGGING_COUNTER_ONLY}"
             model.save_pretrained(save_path)
             tokenizer.save_pretrained(save_path)
             stop_inference_queue.put(save_path)
@@ -195,7 +195,7 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
             selected_policy_probs = policy_model_probs[0, torch.arange(policy_model_probs.shape[1]), response_slice[0]].unsqueeze(0)
             selected_base_probs = base_model_probs[0, torch.arange(base_model_probs.shape[1]), response_slice[0]].unsqueeze(0)
             policy_ratio = selected_policy_probs/ selected_base_probs
-            eps = 0.01
+            eps = 0.01 * (LOGGING_COUNTER_ONLY / 100 + 1)
             clipped_policy_ratio = torch.clip(policy_ratio, min = 1-eps, max = 1+ eps)
             unclipped_policy_ratio = policy_ratio
             kl_divergence = torch.sum(torch.maximum(torch.log(selected_policy_probs) - torch.log(selected_base_probs), torch.zeros_like(selected_base_probs)))
@@ -208,8 +208,9 @@ def train(model_path, reasoning_trace_queue, stop_inference_queue, GPU_IDX):
             clear_vram()
             torch.cuda.synchronize()
             loss.backward()
-            print(torch.prod(clipped_policy_ratio))
+            print(torch.prod(clipped_policy_ratio).item(), kl_divergence.item(), optimizer.param_groups[0]['lr'])
         optimizer.step()
+        scheduler.step()
         sys.stdout.flush()
 
         

@@ -10,5 +10,5 @@ if __name__ == "__main__":
     args = (model_path, reasoning_trace_queue, stop_inference_queue, 1)
     inference = Process(target=run_inference_server, args=args)
     inference.start()
-    train(model_path, reasoning_trace_queue, stop_inference_queue, 2)
+    train(model_path, reasoning_trace_queue, stop_inference_queue, 3)
     inference.join()

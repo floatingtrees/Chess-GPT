@@ -89,8 +89,9 @@ def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue
     print("Starting Inference")
     coordination_queue = Queue()
     threads = []
+    WEIRD_MODEL_NAME = model_path
     while True:
-        WEIRD_MODEL_NAME = model_path
+        
         fen = sampler.get_random_position()
         messages = make_chat(fen)
         while coordination_queue.qsize() >= MAX_PARALLEL_BATCHES:
@@ -123,7 +124,7 @@ def run_inference_server(model_path, reasoning_trace_queue, stop_inference_queue
                 "--lora-modules", f"{lora_name}={lora_path}",
                 ], env=env, start_new_session=True)
             WEIRD_MODEL_NAME = lora_name
-            time.sleep(50)
+            time.sleep(100)
             print("Model reloaded.")
         sys.stdout.flush()
             
